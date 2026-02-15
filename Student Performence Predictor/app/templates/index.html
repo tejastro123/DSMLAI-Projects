@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Performance Predictor</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h2>Predict Student Performance</h2>
+        <form method="POST">
+            <div class="form-group">
+                <label for="study_hours">Weekly Study Hours</label>
+                <input type="number" step="0.1" name="study_hours" id="study_hours" placeholder="e.g. 15.5" required min="0" max="168">
+            </div>
+            <div class="form-group">
+                <label for="attendance">Attendance Percentage (%)</label>
+                <input type="number" step="0.1" name="attendance" id="attendance" placeholder="e.g. 85.0" required min="0" max="100">
+            </div>
+            <div class="form-group">
+                <label for="participation">Class Participation (1-10)</label>
+                <input type="number" step="0.1" name="participation" id="participation" placeholder="e.g. 8.5" required min="0" max="10">
+            </div>
+            <button type="submit">Predict Score</button>
+        </form>
+
+        {% if error %}
+            <div class="result" style="border-left-color: #ff4757;">
+                <h3 style="color: #ff4757;">Error</h3>
+                <p>{{ error }}</p>
+            </div>
+        {% endif %}
+
+        {% if prediction %}
+            <div class="result">
+                <h3>Predicted Score</h3>
+                <p class="grade">{{ prediction }}</p>
+                {% if grade %}
+                    <p>Estimated Grade: <strong>{{ grade }}</strong></p>
+                {% endif %}
+            </div>
+        {% endif %}
+    </div>
+</body>
+</html>
