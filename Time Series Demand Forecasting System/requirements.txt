@@ -5,3 +5,4 @@ prophet
 streamlit
 
 matplotlib
+plotly

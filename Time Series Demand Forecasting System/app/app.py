@@ -2,7 +2,9 @@ import streamlit as st
 import pandas as pd
 import sys
 import os
-import matplotlib.pyplot as plt
+import pickle
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 # Add project root to path
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -10,120 +12,124 @@ project_root = os.path.dirname(current_dir)
 if project_root not in sys.path:
     sys.path.append(project_root)
 
+# Import backend modules
 try:
     from src.preprocess import load_data
+    from src.train import train_models
     from src.forecast import forecast_next
-except ImportError:
-    st.error("Could not import source modules. Please ensure you are running from the project root.")
+except ImportError as e:
+    st.error(f"Import Error: {e}")
     st.stop()
 
 st.set_page_config(page_title="Demand Forecasting System", layout="wide")
 
 st.title("Time Series Demand Forecasting System")
-st.markdown("""
-This system predicts future product sales based on historical data. 
-Upload a CSV file with `date` and `sales` columns.
-""")
 
-# Sidebar for inputs
-with st.sidebar:
-    st.header("Configuration")
-    uploaded_file = st.file_uploader("Upload Sales CSV", type=['csv'])
-    days = st.slider("Forecast Horizon (Days)", min_value=7, max_value=90, value=30)
-    
-    run_forecast = st.button("Generate Forecast")
+# Sidebar for controls
+st.sidebar.header("Configuration")
 
-if uploaded_file:
-    try:
-        # Load and preprocess data
-        df = load_data(uploaded_file)
-        
-        if df is not None:
-            # Display historical data
-            st.subheader("Historical Sales Data")
-            col1, col2 = st.columns([3, 1])
-            
-            with col1:
-                st.line_chart(df['sales'])
-            
-            with col2:
-                st.write("Recent Data:")
-                st.dataframe(df.tail(10))
-            
-            if run_forecast:
-                with st.spinner("Generating forecast..."):
-                    # Generate forecast
-                    # Note: forecast_next loads the model from disk. 
-                    # If model was trained on different data structure/scale, results might be nonsense 
-                    # if we upload a completely new dataset.
-                    # Ideally we should retrain here or allow model selection.
-                    # For this scope, user asked for "Forecast next N days" using "Best model".
-                    # We assume the uploaded data is consistent with what the model expects (or valid for the model).
-                    
-                    forecast_df, model_name = forecast_next(df, days)
-                    
-                    if forecast_df is not None:
-                        st.subheader(f"Forecast ({days} days)")
-                        st.info(f"Using Model: **{model_name}**")
-                        
-                        # Plotting forecast
-                        # We can combine history and forecast for a nice plot
-                        fig, ax = plt.subplots(figsize=(10, 5))
-                        ax.plot(df.index[-60:], df['sales'].tail(60), label='Historical (Last 60 days)')
-                        
-                        # Forecast dates are in 'date' or 'ds' column depending on model
-                        if 'ds' in forecast_df.columns:
-                            # Prophet
-                            dates = forecast_df['ds']
-                            preds = forecast_df['yhat']
-                        else:
-                            # Random Forest / custom
-                            dates = forecast_df['date']
-                            preds = forecast_df['forecast']
-                            
-                        ax.plot(dates, preds, label='Forecast', linestyle='--', color='red')
-                        ax.legend()
-                        ax.set_title("Sales Forecast")
-                        ax.set_xlabel("Date")
-                        ax.set_ylabel("Sales")
-                        st.pyplot(fig)
-                        
-                        st.write("Forecast Data:")
-                        st.dataframe(forecast_df)
-                        
-                        # Download button
-                        csv = forecast_df.to_csv(index=False)
-                        st.download_button(
-                            label="Download Forecast CSV",
-                            data=csv,
-                            file_name="forecast.csv",
-                            mime="text/csv",
-                        )
-                    else:
-                        st.error(model_name) # Error message is in second return value if first is None
-                        
-    except Exception as e:
-        st.error(f"Error processing file: {e}")
+days = st.sidebar.slider("Forecast Horizon (days)", 7, 90, 30)
 
+# Upload section
+st.header("1. Upload Data")
+uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
+
+# Logic to handle uploaded file OR default file
+df = None
+data_path = None
+
+if uploaded_file is not None:
+    df, _ = load_data(uploaded_file)
 else:
-    st.info("Please upload a CSV file to get started. You can use the dummy data generated in `data/raw/sales.csv` for testing.")
-    
-    # Optional: Load default data button
+    # Use default
+    st.info("Using default dataset (sales2.csv) since no file uploaded.")
     base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    default_data_path = os.path.join(base_path, "data", "raw", "sales1.csv")
+    default_data_path = os.path.join(base_path, "data", "raw", "sales2.csv")
     if os.path.exists(default_data_path):
-        if st.checkbox("Use dummy data"):
-            # Mock uploaded file behavior
-            df = load_data(default_data_path)
-            st.subheader("Historical Sales Data (Dummy)")
-            st.line_chart(df['sales'])
+        df, _ = load_data(default_data_path)
+
+if df is not None:
+    st.success("Data loaded successfully!")
+    
+    # Display historical data
+    st.header("2. Historical Sales Data")
+    
+    # Plotly Chart
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=df.index, y=df['sales'], mode='lines', name='Sales'))
+    fig.update_layout(title="Historical Sales", xaxis_title="Date", yaxis_title="Sales", hovermode="x unified")
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Model training and forecasting
+    st.header("3. Training & Forecast")
+    if st.button("Train Models & Forecast"):
+        with st.spinner("Training models and generating forecast..."):
+            # Train models using the loaded dataframe
+            best_model, model_name = train_models(df=df)
             
-            if st.button("Forecast on Dummy Data"):
-                 forecast_df, model_name = forecast_next(df, days)
-                 if forecast_df is not None:
-                    st.subheader(f"Forecast ({days} days)")
-                    st.write(f"Model: {model_name}")
+            if best_model:
+                st.success(f"Training Complete! Best Model: **{model_name}**")
+                
+                # Generate forecast
+                forecast_df, model_name = forecast_next(df, days)
+                
+                if forecast_df is not None:
+                    st.header(f"Forecast ({days} days)")
+                    
+                    # Plot forecast
+                    fig_forecast = go.Figure()
+                    
+                    # Historical data (last 60 days for context)
+                    history_subset = df.tail(60)
+                    fig_forecast.add_trace(go.Scatter(
+                        x=history_subset.index,
+                        y=history_subset['sales'],
+                        mode='lines',
+                        name='Historical Sales',
+                        line=dict(color='blue')
+                    ))
+                    
+                    # Forecast data
                     if 'ds' in forecast_df.columns:
-                        st.line_chart(forecast_df.set_index('ds')['yhat'])
+                        # Prophet
+                        fig_forecast.add_trace(go.Scatter(
+                            x=forecast_df['ds'],
+                            y=forecast_df['yhat'],
+                            mode='lines',
+                            name='Forecast',
+                            line=dict(color='orange')
+                        ))
                     else:
-                        st.line_chart(forecast_df.set_index('date')['forecast'])
+                        # RF
+                        fig_forecast.add_trace(go.Scatter(
+                            x=forecast_df['date'],
+                            y=forecast_df['forecast'],
+                            mode='lines',
+                            name='Forecast',
+                            line=dict(color='orange')
+                        ))
+                    
+                    fig_forecast.update_layout(
+                        title='Sales Forecast',
+                        xaxis_title='Date',
+                        yaxis_title='Sales',
+                        template='plotly_white'
+                    )
+                    
+                    st.plotly_chart(fig_forecast, use_container_width=True)
+                    
+                    st.write("Forecast Data:")
+                    st.dataframe(forecast_df)
+                    
+                    # Download button
+                    csv = forecast_df.to_csv(index=False)
+                    st.download_button(
+                        label="Download Forecast CSV",
+                        data=csv,
+                        file_name="forecast.csv",
+                        mime="text/csv",
+                    )
+                else:
+                    st.error("Failed to generate forecast.") 
+            else:
+                 st.error("Training failed.")

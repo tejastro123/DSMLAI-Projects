@@ -31,32 +31,34 @@ def create_lags(data, lags=7):
     df_lag.dropna(inplace=True)
     return df_lag
 
-def train_models():
-    print("Loading data...")
+def train_models(df=None, store_id=None, product_id=None):
+    print(f"Loading data... (Filter: Store={store_id}, Product={product_id})")
     # absolute path or relative from root. Assuming run from root for paths to work nicely
     # process paths to be robust
     base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    data_path = os.path.join(base_path, "data", "raw", "sales1.csv")
-    
-    if not os.path.exists(data_path):
-        print(f"Data not found at {data_path}")
-        return
-
-    df = load_data(data_path)
     
     if df is None:
+        data_path = os.path.join(base_path, "data", "raw", "sales2.csv")
+        
+        if not os.path.exists(data_path):
+            print(f"Data not found at {data_path}")
+            return None, None
+
+        df, _ = load_data(data_path, store_id=store_id, product_id=product_id)
+        
+    if df is None:
         print("Failed to load data.")
-        return
+        return None, None
 
     # Train-test split
+    # Ensure min data points
+    if len(df) < 30:
+        print(f"Not enough data to train (n={len(df)}). Minimum 30 required.")
+        return None, None
+        
     train = df[:-30]
     test = df[-30:]
     
-    # Check if we have enough data
-    if len(train) < 7:
-        print("Not enough data to train.")
-        return
-
     results = {}
     models = {}
 
@@ -81,35 +83,34 @@ def train_models():
     # ---------- Model 2: Random Forest ----------
     try:
         lag_df = create_lags(df)
-        # Re-split after lag creation as some initial rows are dropped
-        # We need to ensure we don't leak test data. 
-        # But lag_df drops first 7 rows. 
-        # We should split lag_df carefully.
-        
-        # Determine split index based on date
-        split_date = test.index[0]
-        train_lag = lag_df[lag_df.index < split_date]
-        test_lag = lag_df[lag_df.index >= split_date]
+        if len(lag_df) > 0:
+            # Determine split index based on date
+            split_date = test.index[0]
+            train_lag = lag_df[lag_df.index < split_date]
+            test_lag = lag_df[lag_df.index >= split_date]
 
-        X_train = train_lag.drop('sales', axis=1)
-        y_train = train_lag['sales']
-        X_test = test_lag.drop('sales', axis=1)
-        y_test = test_lag['sales']
+            X_train = train_lag.drop('sales', axis=1)
+            y_train = train_lag['sales']
+            X_test = test_lag.drop('sales', axis=1)
+            y_test = test_lag['sales']
 
-        rf = RandomForestRegressor(n_estimators=100, random_state=42)
-        rf.fit(X_train, y_train)
-        pred_rf = rf.predict(X_test)
+            if len(X_train) > 0 and len(X_test) > 0:
+                rf = RandomForestRegressor(n_estimators=100, random_state=42)
+                rf.fit(X_train, y_train)
+                pred_rf = rf.predict(X_test)
 
-        mae_rf = mean_absolute_error(y_test, pred_rf)
-        results['RandomForest'] = mae_rf
-        models['RandomForest'] = rf
+                mae_rf = mean_absolute_error(y_test, pred_rf)
+                results['RandomForest'] = mae_rf
+                models['RandomForest'] = rf
+            else:
+                 print("Not enough data for RF lag split.")
     except Exception as e:
         print(f"Random Forest training failed: {e}")
 
     # ---------- Select Best ----------
     if not results:
         print("No models trained successfully.")
-        return
+        return None, None
 
     best_model_name = min(results, key=results.get)
     best_model = models[best_model_name]
@@ -119,6 +120,9 @@ def train_models():
 
     # Save models
     models_dir = os.path.join(base_path, "models")
+    
+    # Optional: suffix filenames with IDs if needed, but for simplicity we overwrite "best"
+    # Or return objects to App to keep in memory or save with unique ID
     
     with open(os.path.join(models_dir, "best_model.pkl"), 'wb') as f:
         pickle.dump(best_model, f)
@@ -135,6 +139,7 @@ def train_models():
             pickle.dump(models['RandomForest'], f)
         
     print("Models saved.")
+    return best_model, best_model_name
 
 if __name__ == "__main__":
     train_models()
