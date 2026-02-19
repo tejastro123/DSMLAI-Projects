@@ -43,8 +43,9 @@ def forecast_next(df, days=7):
         future = model.make_future_dataframe(periods=days)
         forecast = model.predict(future)
         
-        # Return only the future part
-        return forecast[['ds','yhat']].tail(days), "Prophet"
+        # Return future part with intervals
+        cols = ['ds', 'yhat', 'yhat_lower', 'yhat_upper']
+        return forecast[cols].tail(days), "Prophet"
 
     else:
         # Random Forest (or other sklearn regressors)

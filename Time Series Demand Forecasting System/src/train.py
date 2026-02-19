@@ -66,7 +66,9 @@ def train_models(df=None, store_id=None, product_id=None):
     # ---------- Model 1: Prophet ----------
     try:
         prophet_df = train.reset_index().rename(columns={'date':'ds','sales':'y'})
+        # Add holiday effects (defaulting to US for now, can be parameterized)
         model_p = Prophet()
+        model_p.add_country_holidays(country_name='US') 
         model_p.fit(prophet_df)
 
         future = model_p.make_future_dataframe(periods=30)
@@ -110,7 +112,7 @@ def train_models(df=None, store_id=None, product_id=None):
     # ---------- Select Best ----------
     if not results:
         print("No models trained successfully.")
-        return None, None
+        return None, None, {}
 
     best_model_name = min(results, key=results.get)
     best_model = models[best_model_name]
@@ -120,9 +122,6 @@ def train_models(df=None, store_id=None, product_id=None):
 
     # Save models
     models_dir = os.path.join(base_path, "models")
-    
-    # Optional: suffix filenames with IDs if needed, but for simplicity we overwrite "best"
-    # Or return objects to App to keep in memory or save with unique ID
     
     with open(os.path.join(models_dir, "best_model.pkl"), 'wb') as f:
         pickle.dump(best_model, f)
@@ -139,7 +138,7 @@ def train_models(df=None, store_id=None, product_id=None):
             pickle.dump(models['RandomForest'], f)
         
     print("Models saved.")
-    return best_model, best_model_name
+    return best_model, best_model_name, results
 
 if __name__ == "__main__":
     train_models()

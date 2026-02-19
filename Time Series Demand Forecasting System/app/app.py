@@ -58,17 +58,22 @@ if df is not None:
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df.index, y=df['sales'], mode='lines', name='Sales'))
     fig.update_layout(title="Historical Sales", xaxis_title="Date", yaxis_title="Sales", hovermode="x unified")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch', height='stretch')
     
     # Model training and forecasting
     st.header("3. Training & Forecast")
     if st.button("Train Models & Forecast"):
         with st.spinner("Training models and generating forecast..."):
             # Train models using the loaded dataframe
-            best_model, model_name = train_models(df=df)
+            best_model, model_name, metrics = train_models(df=df)
             
             if best_model:
                 st.success(f"Training Complete! Best Model: **{model_name}**")
+                
+                # Show Comparison
+                if metrics:
+                    st.subheader("Model Comparison (MAE)")
+                    st.table(pd.DataFrame.from_dict(metrics, orient='index', columns=['MAE']))
                 
                 # Generate forecast
                 forecast_df, model_name = forecast_next(df, days)
@@ -99,6 +104,27 @@ if df is not None:
                             name='Forecast',
                             line=dict(color='orange')
                         ))
+                        # Confidence Interval
+                        if 'yhat_lower' in forecast_df.columns and 'yhat_upper' in forecast_df.columns:
+                             fig_forecast.add_trace(go.Scatter(
+                                x=forecast_df['ds'],
+                                y=forecast_df['yhat_upper'],
+                                mode='lines',
+                                name='Upper Bound',
+                                line=dict(width=0),
+                                showlegend=False
+                            ))
+                             fig_forecast.add_trace(go.Scatter(
+                                x=forecast_df['ds'],
+                                y=forecast_df['yhat_lower'],
+                                mode='lines',
+                                fill='tonexty',
+                                fillcolor='rgba(255, 165, 0, 0.2)',
+                                name='Confidence Interval',
+                                line=dict(width=0),
+                                showlegend=False
+                            ))
+                        
                     else:
                         # RF
                         fig_forecast.add_trace(go.Scatter(
